@@ -945,7 +945,10 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
     entrez_options = dict()
     with open(cred_file, 'r') as cred_handle:
         for line in cred_handle:
-            entrez_options[line.split('=')[0]] = line.split('=')[1][:-1]
+            try:
+                entrez_options[line.split('=')[0]] = line.split('=')[1][:-1]
+            except IndexError:
+                pass
     if not entrez_options:
         print("No credentials detected in {0}! Please be aware this makes you susceptible to NCBI timeout and IP ban".format(cred_file))
     else:
