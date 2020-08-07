@@ -6,6 +6,7 @@ The aim of this project is to provide an all-in-one pipeline for the detection a
 # About
 
 Author: Jake Bourgeois
+
 Affiliation: Tufts Graduate School of Biomedical Sciences, Camilli Laboratory
 
 ---------------------------------
@@ -38,10 +39,13 @@ The command is as follows:
 where the BLAST_XML is the path to the BLAST report described above, and REPEAT_SEQ is the repeat unit used in the BLAST search and downstream analysis.
 
 Optional arguments:
--p, --pam_length                  The number of nucleotides directly adjacent to the detected protospacer to extract. Takes from both 5' and 3' direction
--c, --query_coverage_threshold    The minimum coverage a protospacer must cover over the repeat sequenece. For example, 96% coverage over a 33bp spacer sequence                                       allows for a single nucleotide mismatch on the terminal ends
--s, --query_similarity_threshold  The minimum similarity a protospacer must be identical to the repeat sequence.
--o, --output_prefix               Output prefix for analysis files
+
+| Argument | Description |
+| --- | --- |
+| -p, --pam_length | The number of nucleotides directly adjacent to the detected protospacer to extract. Takes from both 5' and 3' direction |
+| -c, --query_coverage_threshold | The minimum coverage a protospacer must cover over the repeat sequenece. For example, 96% coverage over a 33bp spacer sequence allows for a single nucleotide mismatch on the terminal ends |
+| -s, --query_similarity_threshold | The minimum similarity a protospacer must be identical to the repeat sequence. |
+| -o, --output_prefix | Output prefix for analysis files |
 
 
 Note: The largest bottleneck in the script is BLASTing over the web to detect putative protospacers in non-redundant. Please be patient while the script finishes; it could take several days for large amounts of spacers.
@@ -52,17 +56,17 @@ Note: The largest bottleneck in the script is BLASTing over the web to detect pu
 
 spacer_miner.py outputs the following files in tab-delimited format:
 
-crispr_hit_overview: Overview of accessions harboring the repeat sequence. Number of validated repeats refers to the number of repeats matching perfectly to the canonical 28 bp repeat sequence.
+**crispr_hit_overview.tsv**: Overview of accessions harboring the repeat sequence. Number of validated repeats refers to the number of repeats matching perfectly to the canonical 28 bp repeat sequence.
 
-spacer_overview.tsv: Overview of mined spacers. Spacer number is oriented in the order of acquisition, ie. the most recently acquired spacer is the largest number.
+**spacer_overview.tsv**: Overview of mined spacers. Spacer number is oriented in the order of acquisition, ie. the most recently acquired spacer is the largest number.
 
-crispr_repeat_mined_data.tsv: Overview of mined protospacers detected by BLASTing mined spacers to the NCBI non-redundant database.
+**crispr_repeat_mined_data.tsv**: Overview of mined protospacers detected by BLASTing mined spacers to the NCBI non-redundant database.
 
-spacer_histogram.tsv: Frequency of unique mined spacers across the samples
+**spacer_histogram.tsv**: Frequency of unique mined spacers across the samples
 
-potential_new_crispr_arrays.tsv: A quick list of novel accessions detected during protospacer detection that may contain even more novel spacers. A future version may loop the script to recursively search these novel sources to even further expand the database.
+**potential_new_crispr_arrays.tsv**: A quick list of novel accessions detected during protospacer detection that may contain even more novel spacers. A future version may loop the script to recursively search these novel sources to even further expand the database.
 
-perfect_crispr_repeat_mined_data.tsv: A subset of crispr_repeat_mined_data.tsv that only contains hits of 100% coverage and identity.
+**perfect_crispr_repeat_mined_data.tsv**: A subset of crispr_repeat_mined_data.tsv that only contains hits of 100% coverage and identity.
 
 ---------------------------------
 
