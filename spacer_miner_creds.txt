@@ -1,0 +1,2 @@
+email=ENTER_EMAIL_HERE
+api_key=ENTER_APIKEY_HERE
