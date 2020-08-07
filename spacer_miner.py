@@ -1095,7 +1095,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # execute
-    code = main(blast_file=args.BLAST_XML, repeat_sequence=args.REPEAT_SEQUENCE, pam_length=args.pam_length, qcov=args.query_coverage, qsim=args.query_similarity, cred_file=credentials_file, out_prfx=args.out_prfx)
+    code = main(blast_file=args.BLAST_XML, repeat_sequence=args.REPEAT_SEQUENCE, pam_length=args.pam_length, qcov=args.query_coverage_threshold, qsim=args.query_similarity_threshold, cred_file=credentials_file, out_prfx=args.output_prefix)
 
     if code == 1:
         print("Program successfully completed!")
