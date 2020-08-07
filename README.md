@@ -24,6 +24,12 @@ Affiliation: Tufts Graduate School of Biomedical Sciences, Camilli Laboratory
 
 Simply download the repository and extract to a directory.
 
+The folder should contain:
+- spacer_miner.py
+- spacer_miner_creds.txt
+
+Before running the script, put your email and api_key for [Entrez NCBI](https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/) in the spacer_miner_creds.txt file. If you do not, you may encounter errors, slowdowns, and even IP bans for repeated use of NCBI E-utilities.
+
 ---------------------------------
 
 # Running the Script
