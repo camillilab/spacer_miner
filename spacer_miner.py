@@ -1,12 +1,12 @@
 """
 SPACER_MINER.PY
-VERSION 0.5
+VERSION 0.51
 Python 3.7+
 
 Author: Jake Bourgeois
 Email: jacob.bourgeois@tufts.edu
 Affiliation: Camilli Lab, Tufts University
-Date: 08-06-2020
+Date: 08-28-2020
 License: BSD-3
 
 Python script for the automated mining of spacers between CRISPR repeats and determination of protospacer/PAMs. This
@@ -29,6 +29,12 @@ to have more control over that
 - Multiple threads for NCBI web blasts to speed downstream analysis
 
 - Allow user-customizable stringency on spacer validation
+
+
+v0.51
+
+- Fixed an issue where null BLAST results cause the script to hang
+- Added an additional output file that contains unique spacer-protospacer pairs (to make figures as in Fig.1D)
 
 """
 
@@ -229,9 +235,21 @@ class SpacerHit:
         left_seq = parent_seq[start_coordinate - len(repeat): start_coordinate]
         right_seq = parent_seq[end_coordinate: end_coordinate + len(repeat)]
 
+        left_result, right_result = None, None
+
         # edit 2020-08-03 - now check arrays by blasting against the repeat to catch polymorphisms and alternative array
-        left_result = seq_blast(left_seq, 'repeat', q_cov=0.90, sim=0.93)
-        right_result = seq_blast(right_seq, 'repeat', q_cov=0.90, sim=0.93)
+        # edit 2020-08-11 - sometimes, there is no sequence to BLAST. skip.
+
+        if left_seq:
+            left_result = seq_blast(left_seq, 'repeat', q_cov=0.90, sim=0.93)
+        else:
+            print("No sequence detected left of the putative protospacer! Coordinates {0} in hit {1}".format(self.accession, self.coordinates))
+
+        if right_seq:
+            right_result = seq_blast(right_seq, 'repeat', q_cov=0.90, sim=0.93)
+        else:
+            print("No sequence detected right of the putative protospacer! Coordinates {0} in hit {1}".format(
+                self.accession, self.coordinates))
 
         if left_result or right_result:
             # print("Repeat sequence detected: sequence {0} in hit {1} is most likely an array".format(self.accession, self.protospacer_seq))
@@ -268,6 +286,10 @@ class Spacer:
 
         # get genbank infomation for all spacer hsps
         spacer_hit_accessions = [k.accession for k in self.blast_hsps if '{0}.gb'.format(k.accession) not in os.listdir(data_dir)]
+
+        # make list only unique elements
+        spacer_hit_accessions = list(set(spacer_hit_accessions))
+
         if spacer_hit_accessions:
             print("Taking a small breath for Entrez's servers...")
             time.sleep(60)
@@ -620,6 +642,8 @@ def seq_blast(d, dbname, q_cov=1.0, sim=1.0):
 # gets accession info using Entrez
 def get_genbank_info(accessions, download_dir, batch_size=1000, download_type='fasta', max_attempts=3, time_between_attempts=300):
 
+    print("Obtaining accessions: {0}".format(', '.join(accessions)))
+
     epost_handle = Entrez.epost(db='nuccore', id=','.join(accessions))
     epost_result = Entrez.read(epost_handle)
 
@@ -824,14 +848,13 @@ def dump_spacer_histogram_file(bugs, dumpfile):
     with open(dumpfile, 'w') as output_handle:
         writer = csv.writer(output_handle, delimiter='\t')
         writer.writerow(['Spacer', 'Number Occurrences',
-                         'Spacer Accessions', 'Novel Spacer?',
+                         'Spacer Accessions',
                          'Did Spacer match to Protospacer?'])
 
         for entry in sorted(spacer_histogram.items(), key=lambda x: x[1], reverse=True):
             writer.writerow([entry[0],
                              entry[1],
                              ', '.join(spacer_accession_dict[entry[0]]),
-                             spacer_match_dict[entry[0]],
                              spacer_protospacer_dict[entry[0]]])
     return
 
@@ -895,7 +918,7 @@ def dump_full_perfect_file(bugs, dumpfile):
                 for hsp in spacer.blast_hsps:
                     hsp_info = None
                     # You may choose to keep pam_intact as a condition if you so please.
-                    if hsp.query_similarity == 1 and hsp.query_coverage == 1:
+                    if hsp.query_similarity == 1 and hsp.query_coverage == 1 and not hsp.in_existing_array:
                         hsp_info = [hsp.accession,
                                     hsp.description,
                                     hsp.annotation,
@@ -920,6 +943,108 @@ def dump_full_perfect_file(bugs, dumpfile):
 # dump file seven - potentially useful run statistics
 def dump_stats_file(bugs, dumpfile):
     return
+
+
+# dump file eight - unique spacer-protospacer file
+def dump_unique_spacers(bugs, dumpfile):
+
+    headers = ['Spacer',
+               'Spacer Accessions',
+               'Protospacer',
+               'Protospacer Accessions']
+
+    with open(dumpfile, 'w') as output_handle:
+        writer = csv.DictWriter(output_handle, delimiter='\t', fieldnames=headers)
+        writer.writeheader()
+
+        unique_spacers = set()
+        spacer_accession_dict = defaultdict(set)
+
+        # first, collect unique spacers that have cognate protospacers
+        for bug in bugs:
+            for spacer in bug.spacers:
+                if spacer.blast_hsps:
+                    unique_spacers.add(spacer.content)
+                    spacer_accession_dict[spacer.content].add(spacer.name)
+
+        # next, collect unique protospacers corresponding to each unique spacer
+        spacer_protospacer_dict = defaultdict(set)
+        protospacer_info_dict = defaultdict(set)
+        for bug in bugs:
+            for spacer in bug.spacers:
+                for protospacer in spacer.blast_hsps:
+                    if not protospacer.in_existing_array:
+                        spacer_protospacer_dict[spacer.content].add(protospacer.protospacer_seq)
+                        protospacer_info_dict[protospacer.protospacer_seq].add(protospacer.accession)
+
+        # dump the file using unique spacers as the index
+        for spacer in sorted(list(unique_spacers)):
+
+            spacer_accessions = sorted(list(spacer_accession_dict[spacer]))
+            protospacer = spacer_protospacer_dict[spacer]
+            for sequence in protospacer:
+                protospacer_accessions = sorted(list(protospacer_info_dict[sequence]))
+
+                payload = {'Spacer': spacer,
+                           'Spacer Accessions': ','.join(spacer_accessions),
+                           'Protospacer': sequence,
+                           'Protospacer Accessions': ','.join(protospacer_accessions)}
+
+                writer.writerow(payload)
+
+    return
+
+
+# dump file nine - spacer-protospacer-PAM file for making PAM logos without
+# redundant spacers across species creating bias
+def dump_pam_file(bugs, dumpfile):
+
+    headers = ['Spacer',
+               'Protospacer',
+               'Accession',
+               '5\' PAM',
+               '3\' PAM']
+
+    with open(dumpfile, 'w') as output_handle:
+        writer = csv.DictWriter(output_handle, delimiter='\t', fieldnames=headers)
+        writer.writeheader()
+
+        unique_spacers = set()
+
+        # first, collect unique spacers that have cognate protospacers
+        for bug in bugs:
+            for spacer in bug.spacers:
+                if spacer.blast_hsps:
+                    unique_spacers.add(spacer.content)
+
+        # now, collect unique spacer-protospacer instances
+        spacer_protospacer_dict = defaultdict(set)
+        protospacer_pam_dict = dict()
+        protospacer_sequence_dict = dict()
+
+        for bug in bugs:
+            for spacer in bug.spacers:
+                for protospacer in spacer.blast_hsps:
+                    info_payload = (protospacer.accession, protospacer.protospacer_seq, protospacer.fiveprime_pam, protospacer.pam)
+                    spacer_protospacer_dict[spacer.content].add(info_payload)
+
+        for spacer in sorted(list(unique_spacers)):
+            content = spacer_protospacer_dict[spacer]
+            for data in content:
+                protospacer_accession = data[0]
+                protospacer_sequence = data[1]
+                protospacer_fiveprimepam = data[2]
+                protospacer_threeprime_pam = data[3]
+
+                payload = {'Spacer': spacer,
+                           'Protospacer': protospacer_sequence,
+                           'Accession': protospacer_accession,
+                           '5\' PAM': protospacer_fiveprimepam,
+                           '3\' PAM': protospacer_threeprime_pam}
+
+                writer.writerow(payload)
+    return
+
 
 # ---------------------------MAIN-------------------------
 #
@@ -951,8 +1076,11 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
                 pass
     if not entrez_options:
         print("No credentials detected in {0}! Please be aware this makes you susceptible to NCBI timeout and IP ban".format(cred_file))
+        print("Press enter to continue, or Ctrl-C to abort.")
+        foo = input()
     else:
         print('Entrez options: {0}'.format(' '.join([item for k in entrez_options for item in (k, entrez_options[k])])))
+
     Entrez.email = entrez_options['email']
     Entrez.api_key = entrez_options['api_key']
 
@@ -1013,7 +1141,7 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
     # Now let's set up the blast loop
 
     # DEBUG!!
-    # valid_spacer_hits = valid_spacer_hits[0:1]
+    #valid_spacer_hits = valid_spacer_hits[0:1]
 
     # Generate local blastdb for repeat sequence
     with open('repeat.fasta', 'w') as output_handle:
@@ -1045,9 +1173,11 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
     histo_file = '{0}_spacer_histogram.tsv'.format(out_prfx)
     array_file = '{0}_potential_new_crispr_arrays.tsv'.format(out_prfx)
     perfect_file = '{0}_perfect_crispr_repeat_mined_data.tsv'.format(out_prfx)
+    spacer_protospacer_file = '{0}_spacer_protospacer.tsv'.format(out_prfx)
+    pam_file = '{0}_pam.tsv'.format(out_prfx)
 
     print("Writing overview file to {0}...".format(overview_file))
-    dump_overview_file(valid_spacer_hits, dumpfile=overview_file)
+    dump_overview_file(valid_crispr_hits, dumpfile=overview_file)
 
     print("Writing spacer information file to {0}...".format(spacer_file))
     dump_spacer_info_file(valid_spacer_hits, dumpfile=spacer_file)
@@ -1064,9 +1194,15 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
     print("Writing curated protospacers to {0}...".format(perfect_file))
     dump_full_perfect_file(valid_spacer_hits, dumpfile=perfect_file)
 
+    print("Writing spacer-protospacer file to {0}...".format(spacer_protospacer_file))
+    dump_unique_spacers(valid_spacer_hits, dumpfile=spacer_protospacer_file)
+
+    print("Writing protospacer PAM file to {0}...".format(pam_file))
+    dump_pam_file(valid_spacer_hits, dumpfile=pam_file)
+
     # Clean up BLASTdb files
     print("Cleaning temporary files...")
-    prefixes = ['repeat']
+    prefixes = ['repeat', 'temp']
     for prefix in prefixes:
         to_remove = glob.glob(os.path.join(os.getcwd(), '{0}*'.format(prefix)))
         for item in to_remove:
