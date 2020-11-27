@@ -78,7 +78,8 @@ spacer_miner.py outputs the following files in tab-delimited format:
 
 Please direct questions and comments to my email, jacob.bourgeois@tufts.edu.
 
-If you use this script and find it useful in your analysis, please cite us at: CITATION HERE
+If you use this script and find it useful in your analysis, please cite us at: 
+Bourgeois J, Lazinski DW, Camilli A. 2020. Identification of spacer and protospacer sequence requirements in the Vibrio cholerae type I-E CRISPR/Cas system. mSphere 5:e00813-20. https://doi.org/10.1128/mSphere.00813-20.
 
 Thank you and happy hunting!
 
