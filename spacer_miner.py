@@ -36,6 +36,13 @@ v0.51
 - Fixed an issue where null BLAST results cause the script to hang
 - Added an additional output file that contains unique spacer-protospacer pairs (to make figures as in Fig.1D)
 
+
+v0.52
+05-11-2023
+- Updated code to conform to Biopython's depreciation of the Bio.alphabet module
+- Added a contingency to handle downloading of records that no longer have GI numbers and hence fail EPOST
+related entrez utilities
+
 """
 
 from Bio import Entrez
@@ -48,7 +55,6 @@ from urllib.error import HTTPError
 from Bio.Blast import NCBIWWW
 from Bio.Blast.Applications import NcbiblastnCommandline as bioblastn
 from Bio.SeqRecord import SeqRecord
-from Bio.Alphabet import generic_protein, generic_nucleotide
 import time
 from collections import defaultdict
 import subprocess
@@ -640,16 +646,20 @@ def seq_blast(d, dbname, q_cov=1.0, sim=1.0):
 
 
 # gets accession info using Entrez
-def get_genbank_info(accessions, download_dir, batch_size=1000, download_type='fasta', max_attempts=3, time_between_attempts=300):
+# 2023-05-11: There appears to be some internal value error with certain accession numbers, returning a RuntimeError:
+# Some IDs have invalid value and were omitted. Maximum ID value 18446744073709551615
+# Hypothesis: there is no actual ID number for these late-game accessions, thus, we have to efetch them all against best practices
+
+""" FOUND ON https://www.ncbi.nlm.nih.gov/books/NBK25499/
+Special note for sequence databases.
+
+NCBI is no longer assigning GI numbers to a growing number of new sequence records.
+As such, these records are not indexed in Entrez, and so cannot be retrieved using ESearch or ESummary, and have no Entrez links accessible by ELink.
+EFetch can retrieve these records by including their accession.version identifier in the id parameter.
+"""
+def get_genbank_info(accessions, download_dir, batch_size=100, download_type='fasta', max_attempts=3, time_between_attempts=300):
 
     print("Obtaining accessions: {0}".format(', '.join(accessions)))
-
-    epost_handle = Entrez.epost(db='nuccore', id=','.join(accessions))
-    epost_result = Entrez.read(epost_handle)
-
-    # obtain WebEnv and Query_Key for EFetch query
-    query_key = epost_result['QueryKey']
-    webenv = epost_result['WebEnv']
 
     # define output type
     if download_type == 'fasta':
@@ -662,29 +672,75 @@ def get_genbank_info(accessions, download_dir, batch_size=1000, download_type='f
         download_suffix = '.gb'
         write_format = 'gb'
 
-    # Using efetch, grab the sequence and download it to local storage. Do this in a batch of 100
+    try:
+        epost_handle = Entrez.epost(db='nuccore', id=','.join(accessions))
+        epost_result = Entrez.read(epost_handle)
 
-    attempts = 1
-    while attempts < max_attempts:
-        try:
-            with Entrez.efetch(db='nuccore', retmax=batch_size, rettype=download_type, retmode='text', webenv=webenv, query_key=query_key) as efetch_handle:
-                efetch_result = SeqIO.parse(efetch_handle, format=write_format)
-                for record in efetch_result:
-                    output_filename = os.path.join(download_dir, '{0}{1}'.format(record.name.split('.')[0], download_suffix))
-                    with open(output_filename, 'w') as output_file:
-                        SeqIO.write(record, output_file, format=write_format)
-                        print("Wrote {0}".format(output_filename))
-            attempts = max_attempts
-        except HTTPError as e:
-            print("\nHTTP ERROR! {0}".format(e))
-            attempts += 1
-            print("Waiting {0} seconds...".format(time_between_attempts))
-            time.sleep(time_between_attempts)
-        except ValueError as e:
-            print("\nVALUE ERROR! {0}".format(e))
-            attempts += 1
-            print("Waiting {0} seconds...".format(time_between_attempts))
-            time.sleep(time_between_attempts)
+        # obtain WebEnv and Query_Key for EFetch query
+        query_key = epost_result['QueryKey']
+        webenv = epost_result['WebEnv']
+
+        # Using efetch, grab the sequence and download it to local storage. Do this in a batch of 100
+
+        attempts = 1
+        while attempts < max_attempts:
+            try:
+                with Entrez.efetch(db='nuccore', retmax=batch_size, rettype=download_type, retmode='text', webenv=webenv, query_key=query_key) as efetch_handle:
+                    efetch_result = SeqIO.parse(efetch_handle, format=write_format)
+                    for record in efetch_result:
+                        output_filename = os.path.join(download_dir, '{0}{1}'.format(record.name.split('.')[0], download_suffix))
+                        with open(output_filename, 'w') as output_file:
+                            SeqIO.write(record, output_file, format=write_format)
+                            print("Wrote {0}".format(output_filename))
+                attempts = max_attempts
+            except HTTPError as e:
+                print("\nHTTP ERROR! {0}".format(e))
+                attempts += 1
+                print("Waiting {0} seconds...".format(time_between_attempts))
+                time.sleep(time_between_attempts)
+            except ValueError as e:
+                print("\nVALUE ERROR! {0}".format(e))
+                attempts += 1
+                print("Waiting {0} seconds...".format(time_between_attempts))
+                time.sleep(time_between_attempts)
+    except RuntimeError:
+        print("The EPOST request likely includes an accession that does not have a reference GI number. Proceeding directly to efetch...")
+
+        # Using efetch, grab the sequence and download it to local storage. Do this in a batch of 100
+        start = 0
+        current = 0
+        end = len(accessions)
+        batch_size = 5
+        for current in range(0, len(accessions), batch_size):
+            if current + batch_size > end:
+                current_accessions = accessions[current:end]
+            else:
+                current_accessions = accessions[current:current+batch_size]
+
+            attempts = 1
+            while attempts < max_attempts:
+                try:
+                    current_accessions = ','.join(current_accessions)
+                    print(current_accessions)
+                    with Entrez.efetch(db='nuccore', rettype=download_type, retmode='text', id=current_accessions) as efetch_handle:
+                        efetch_result = SeqIO.parse(efetch_handle, format=write_format)
+                        for record in efetch_result:
+                            output_filename = os.path.join(download_dir, '{0}{1}'.format(record.name.split('.')[0], download_suffix))
+                            with open(output_filename, 'w') as output_file:
+                                SeqIO.write(record, output_file, format=write_format)
+                                print("Wrote {0}".format(output_filename))
+                    attempts = max_attempts
+                except HTTPError as e:
+                    print("\nHTTP ERROR! {0}".format(e))
+                    attempts += 1
+                    print("Waiting {0} seconds...".format(time_between_attempts))
+                    time.sleep(time_between_attempts)
+                except ValueError as e:
+                    print("\nVALUE ERROR! {0}".format(e))
+                    attempts += 1
+                    print("Waiting {0} seconds...".format(time_between_attempts))
+                    time.sleep(time_between_attempts)
+
 
     return
 
@@ -1145,7 +1201,7 @@ def main(blast_file, repeat_sequence, cred_file, pam_length=6, qcov=0.96, qsim=0
 
     # Generate local blastdb for repeat sequence
     with open('repeat.fasta', 'w') as output_handle:
-        record = SeqRecord(seq=Seq(repeat_seq, alphabet=generic_nucleotide), id='repeat_seq')
+        record = SeqRecord(seq=Seq(repeat_seq), id='repeat_seq', annotations={"molecule_type": "DNA"})
         SeqIO.write(record, output_handle, format='fasta')
     make_local_blast_db(fasta='repeat.fasta', dbname='repeat')
 
